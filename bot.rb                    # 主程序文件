@@ -1,6 +1,7 @@
 require 'telegram/bot'
 require 'json'
 
+# 替换为你的 Telegram Bot Token
 TOKEN = '你的 Telegram Bot Token'
 
 # 数据存储文件夹
@@ -14,15 +15,9 @@ unless Dir.exist?(DATA_FOLDER)
 end
 
 # 创建模块文件夹
-begin
-  unless Dir.exist?(MODULES_FOLDER)
-    Dir.mkdir(MODULES_FOLDER)
-    puts "模块文件夹已创建: #{MODULES_FOLDER}"
-  else
-    puts "模块文件夹已经存在: #{MODULES_FOLDER}"
-  end
-rescue => e
-  puts "创建文件夹时发生错误: #{e.message}"
+unless Dir.exist?(MODULES_FOLDER)
+  Dir.mkdir(MODULES_FOLDER)
+  puts "模块文件夹已创建: #{MODULES_FOLDER}"
 end
 
 # 数据存储文件
@@ -38,6 +33,7 @@ def save_data(file_path, data)
   File.write(file_path, JSON.pretty_generate(data))
 end
 
+# 加载用户和红包数据
 users = load_data(USER_DATA_FILE)
 red_packets = load_data(RED_PACKET_FILE)
 
