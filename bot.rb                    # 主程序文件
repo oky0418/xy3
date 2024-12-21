@@ -1,0 +1,160 @@
+require 'telegram/bot'
+require 'json'
+
+TOKEN = '你的 Telegram Bot Token'
+
+# 数据存储文件夹
+DATA_FOLDER = './data'
+MODULES_FOLDER = './modules'
+
+# 创建数据存储文件夹
+unless Dir.exist?(DATA_FOLDER)
+  Dir.mkdir(DATA_FOLDER)
+  puts "数据文件夹已创建: #{DATA_FOLDER}"
+end
+
+# 创建模块文件夹
+unless Dir.exist?(MODULES_FOLDER)
+  Dir.mkdir(MODULES_FOLDER)
+  puts "模块文件夹已创建: #{MODULES_FOLDER}"
+end
+
+# 数据存储文件
+USER_DATA_FILE = './data/users.json'
+RED_PACKET_FILE = './data/red_packets.json'
+
+# 加载或初始化用户数据
+def load_data(file_path)
+  File.exist?(file_path) ? JSON.parse(File.read(file_path)) : {}
+end
+
+def save_data(file_path, data)
+  File.write(file_path, JSON.pretty_generate(data))
+end
+
+users = load_data(USER_DATA_FILE)
+red_packets = load_data(RED_PACKET_FILE)
+
+# 管理员设置
+ADMIN_ID = 123456789 # 替换为管理员的 Telegram ID
+
+Telegram::Bot::Client.run(TOKEN) do |bot|
+  bot.listen do |message|
+    user_id = message.from.id
+    chat_id = message.chat.id
+    text = message.text
+
+    users[user_id] ||= { 'balance' => 0 } # 初始化用户数据
+
+    case text
+    # 查看用户 ID
+    when '/id'
+      bot.api.send_message(chat_id: chat_id, text: "您的用户 ID 是: #{user_id}")
+
+    # 查看余额
+    when '/balance'
+      if user_id == ADMIN_ID
+        bot.api.send_message(chat_id: chat_id, text: "您的余额是: 无限")
+      else
+        balance = users[user_id]['balance']
+        bot.api.send_message(chat_id: chat_id, text: "您的余额是: #{balance}")
+      end
+
+    # 存款功能
+    when /^\/deposit (\d+)$/
+      amount = text.match(/^\/deposit (\d+)$/)[1].to_i
+      users[user_id]['balance'] += amount
+      save_data(USER_DATA_FILE, users)
+      bot.api.send_message(chat_id: chat_id, text: "存款成功！当前余额: #{users[user_id]['balance']}")
+
+    # 提款功能
+    when /^\/withdraw (\d+)$/
+      amount = text.match(/^\/withdraw (\d+)$/)[1].to_i
+      if users[user_id]['balance'] >= amount
+        users[user_id]['balance'] -= amount
+        save_data(USER_DATA_FILE, users)
+        bot.api.send_message(chat_id: chat_id, text: "提款成功！当前余额: #{users[user_id]['balance']}")
+      else
+        bot.api.send_message(chat_id: chat_id, text: "余额不足，无法提款！")
+      end
+
+    # 转账功能
+    when /^\/transfer (\d+) (\d+)$/
+      recipient_id, amount = text.match(/^\/transfer (\d+) (\d+)$/).captures.map(&:to_i)
+      if users[user_id]['balance'] >= amount
+        users[user_id]['balance'] -= amount
+        users[recipient_id] ||= { 'balance' => 0 } # 初始化接收者数据
+        users[recipient_id]['balance'] += amount
+        save_data(USER_DATA_FILE, users)
+        bot.api.send_message(chat_id: chat_id, text: "转账成功！您已向用户 #{recipient_id} 转账 #{amount}")
+      else
+        bot.api.send_message(chat_id: chat_id, text: "余额不足，无法转账！")
+      end
+
+    # 发红包功能
+    when /^\/redpacket (\d+) (\d+)$/
+      total_amount, count = text.match(/^\/redpacket (\d+) (\d+)$/).captures.map(&:to_i)
+      if users[user_id]['balance'] >= total_amount
+        users[user_id]['balance'] -= total_amount
+        red_packet_id = rand(1000..9999)
+        red_packets[red_packet_id] = {
+          'amounts' => Array.new(count) { rand(1..(total_amount / count * 2)) }.shuffle,
+          'creator' => user_id
+        }
+        save_data(RED_PACKET_FILE, red_packets)
+        save_data(USER_DATA_FILE, users)
+        bot.api.send_message(chat_id: chat_id, text: "红包创建成功！领取红包命令: /grab #{red_packet_id}")
+      else
+        bot.api.send_message(chat_id: chat_id, text: "余额不足，无法发红包！")
+      end
+
+    # 抢红包功能
+    when /^\/grab (\d+)$/
+      red_packet_id = text.match(/^\/grab (\d+)$/)[1].to_i
+      if red_packets[red_packet_id] && !red_packets[red_packet_id]['amounts'].empty?
+        amount = red_packets[red_packet_id]['amounts'].pop
+        users[user_id]['balance'] += amount
+        save_data(RED_PACKET_FILE, red_packets)
+        save_data(USER_DATA_FILE, users)
+        bot.api.send_message(chat_id: chat_id, text: "抢红包成功！您获得了 #{amount}！")
+      else
+        bot.api.send_message(chat_id: chat_id, text: "红包已被抢完或不存在！")
+      end
+
+    # 玩家排行榜功能
+    when '/leaderboard'
+      leaderboard = users.sort_by { |_id, data| -data['balance'] }
+                         .map.with_index(1) { |(id, data), index| "#{index}. 用户 #{id}: #{data['balance']}" }
+                         .join("\n")
+      bot.api.send_message(chat_id: chat_id, text: "玩家排行榜:\n#{leaderboard}")
+
+    # 扫雷游戏
+    when /^\/mine (\d+)$/
+      choice = text.match(/^\/mine (\d+)$/)[1].to_i
+      mines = Array.new(10) { rand(1..100) }
+      if mines.include?(choice)
+        bot.api.send_message(chat_id: chat_id, text: "Boom! 您踩到地雷了！")
+      else
+        reward = rand(10..100)
+        users[user_id]['balance'] += reward
+        save_data(USER_DATA_FILE, users)
+        bot.api.send_message(chat_id: chat_id, text: "安全！您获得了 #{reward}！")
+      end
+
+    # 管理员操控余额
+    when /^\/setbalance (\d+) (\d+)$/
+      if user_id == ADMIN_ID
+        target_id, amount = text.match(/^\/setbalance (\d+) (\d+)$/).captures.map(&:to_i)
+        users[target_id] ||= { 'balance' => 0 }
+        users[target_id]['balance'] = amount
+        save_data(USER_DATA_FILE, users)
+        bot.api.send_message(chat_id: chat_id, text: "已将用户 #{target_id} 的余额设置为 #{amount}")
+      else
+        bot.api.send_message(chat_id: chat_id, text: "您没有权限执行此操作！")
+      end
+
+    else
+      bot.api.send_message(chat_id: chat_id, text: "未知命令！")
+    end
+  end
+end
