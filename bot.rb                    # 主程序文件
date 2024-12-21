@@ -14,9 +14,15 @@ unless Dir.exist?(DATA_FOLDER)
 end
 
 # 创建模块文件夹
-unless Dir.exist?(MODULES_FOLDER)
-  Dir.mkdir(MODULES_FOLDER)
-  puts "模块文件夹已创建: #{MODULES_FOLDER}"
+begin
+  unless Dir.exist?(MODULES_FOLDER)
+    Dir.mkdir(MODULES_FOLDER)
+    puts "模块文件夹已创建: #{MODULES_FOLDER}"
+  else
+    puts "模块文件夹已经存在: #{MODULES_FOLDER}"
+  end
+rescue => e
+  puts "创建文件夹时发生错误: #{e.message}"
 end
 
 # 数据存储文件
